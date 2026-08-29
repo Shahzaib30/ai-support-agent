@@ -95,7 +95,7 @@ CREATE INDEX IF NOT EXISTS idx_rag_queries_conversation
 CREATE INDEX IF NOT EXISTS idx_escalations_conversation
     ON escalations(conversation_id);
 
-
+CREATE INDEX IF NOT EXISTS idx_daily_summaries_date
 CREATE OR REPLACE FUNCTION update_conversation_last_message()
 RETURNS TRIGGER AS $$
 BEGIN
