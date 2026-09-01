@@ -1,0 +1,16 @@
+global:
+  scrape_interval:     15s   # scrape every 15 seconds
+  evaluation_interval: 15s
+
+scrape_configs:
+
+  # scrape FastAPI metrics endpoint
+  - job_name: "ai-support-api"
+    static_configs:
+      - targets: ["api:8000"]   # container name:port
+    metrics_path: "/metrics"
+
+  # scrape Prometheus itself
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
