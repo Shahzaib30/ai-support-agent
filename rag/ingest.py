@@ -5,20 +5,24 @@ import numpy as np
 from pathlib import Path
 from loguru import logger
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
 from langchain_community.document_loaders import (
     PyPDFLoader,
     TextLoader,
     Docx2txtLoader,
     DirectoryLoader,
 )
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from openai import OpenAI
+
+client = OpenAI(
+    api_key=os.getenv("DEEPSEEK_API_KEY"),
+    base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+)
 
 load_dotenv()
 
 DOCS_PATH        = "./docs"
 FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "./vector_store/faiss_index")
-EMBEDDING_MODEL  = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 CHUNK_SIZE       = 512
 CHUNK_OVERLAP    = 64
 
@@ -86,7 +90,6 @@ def embed_chunks(chunks: list) -> tuple:
     """
     logger.info(f"Embedding {len(chunks)} chunks...")
 
-    model  = SentenceTransformer(EMBEDDING_MODEL)
     texts  = [chunk.page_content for chunk in chunks]
     metas  = [
         {
@@ -97,14 +100,16 @@ def embed_chunks(chunks: list) -> tuple:
         for i, chunk in enumerate(chunks)
     ]
 
-    embeddings = model.encode(
-        texts,
-        show_progress_bar=True,
-        batch_size=32,
+    response = client.embeddings.create(
+        input=texts,
+        model="text-embedding-3-small"
     )
+    embeddings = np.array([item.embedding for item in response.data])
 
-    logger.info(f"Embeddings shape: {embeddings.shape}")
-    return embeddings, texts, metas
+
+
+    logger.info(f"Embeddings shape: {embeddings.shape}")    
+    return response, texts, metas
 
 
 def build_faiss_index(embeddings: np.ndarray) -> faiss.IndexFlatIP:

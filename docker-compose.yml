@@ -33,9 +33,9 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB:       support_agent
+      POSTGRES_DB:       ai_support_agent
       POSTGRES_USER:     postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: shahzaib123
     volumes:
       - postgres_data:/var/lib/postgresql/data     # data persists
       - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql  # auto runs on first start
