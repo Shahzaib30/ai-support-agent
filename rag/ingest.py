@@ -5,6 +5,7 @@ import numpy as np
 from pathlib import Path
 from loguru import logger
 from dotenv import load_dotenv
+from fastembed import TextEmbedding
 from langchain_community.document_loaders import (
     PyPDFLoader,
     TextLoader,
@@ -12,20 +13,24 @@ from langchain_community.document_loaders import (
     DirectoryLoader,
 )
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from openai import OpenAI
-
-client = OpenAI(
-    api_key=os.getenv("DEEPSEEK_API_KEY"),
-    base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
-)
 
 load_dotenv()
 
+# ─────────────────────────────────────────
+# CONFIG
+# ─────────────────────────────────────────
 DOCS_PATH        = "./docs"
 FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "./vector_store/faiss_index")
 CHUNK_SIZE       = 512
 CHUNK_OVERLAP    = 64
 
+# load embedding model once
+embedding_model = TextEmbedding("BAAI/bge-small-en-v1.5")
+
+
+# ─────────────────────────────────────────
+# STEP 1 — LOAD DOCUMENTS
+# ─────────────────────────────────────────
 def load_documents(docs_path: str = DOCS_PATH) -> list:
     """
     Load all documents from docs folder.
@@ -35,7 +40,7 @@ def load_documents(docs_path: str = DOCS_PATH) -> list:
 
     path = Path(docs_path)
     if not path.exists():
-        logger.warning(f"Docs folder not found — creating it")
+        logger.warning("Docs folder not found — creating it")
         path.mkdir(parents=True, exist_ok=True)
         return []
 
@@ -64,6 +69,9 @@ def load_documents(docs_path: str = DOCS_PATH) -> list:
     return documents
 
 
+# ─────────────────────────────────────────
+# STEP 2 — CHUNK DOCUMENTS
+# ─────────────────────────────────────────
 def chunk_documents(documents: list) -> list:
     """
     Split documents into smaller chunks.
@@ -81,17 +89,18 @@ def chunk_documents(documents: list) -> list:
     return chunks
 
 
+# ─────────────────────────────────────────
+# STEP 3 — EMBED CHUNKS
+# ─────────────────────────────────────────
 def embed_chunks(chunks: list) -> tuple:
     """
-    Convert chunks to vectors using
-    sentence-transformers.
-
+    Convert chunks to vectors using fastembed.
     Returns: (embeddings, texts, metadatas)
     """
     logger.info(f"Embedding {len(chunks)} chunks...")
 
-    texts  = [chunk.page_content for chunk in chunks]
-    metas  = [
+    texts = [chunk.page_content for chunk in chunks]
+    metas = [
         {
             "source":   chunk.metadata.get("source", "unknown"),
             "page":     chunk.metadata.get("page", 0),
@@ -100,18 +109,19 @@ def embed_chunks(chunks: list) -> tuple:
         for i, chunk in enumerate(chunks)
     ]
 
-    response = client.embeddings.create(
-        input=texts,
-        model="text-embedding-3-small"
+    # embed using fastembed — no API call, runs locally
+    embeddings = np.array(
+        list(embedding_model.embed(texts)),
+        dtype=np.float32
     )
-    embeddings = np.array([item.embedding for item in response.data])
+
+    logger.info(f"Embeddings shape: {embeddings.shape}")
+    return embeddings, texts, metas
 
 
-
-    logger.info(f"Embeddings shape: {embeddings.shape}")    
-    return response, texts, metas
-
-
+# ─────────────────────────────────────────
+# STEP 4 — BUILD FAISS INDEX
+# ─────────────────────────────────────────
 def build_faiss_index(embeddings: np.ndarray) -> faiss.IndexFlatIP:
     """
     Build FAISS index from embeddings.
@@ -129,6 +139,10 @@ def build_faiss_index(embeddings: np.ndarray) -> faiss.IndexFlatIP:
     logger.info(f"FAISS index built — {index.ntotal} vectors")
     return index
 
+
+# ─────────────────────────────────────────
+# STEP 5 — SAVE TO DISK
+# ─────────────────────────────────────────
 def save_index(
     index:     faiss.IndexFlatIP,
     texts:     list,
@@ -151,6 +165,9 @@ def save_index(
     logger.success(f"Saved to {path} — {index.ntotal} vectors")
 
 
+# ─────────────────────────────────────────
+# MAIN
+# ─────────────────────────────────────────
 def ingest(docs_path: str = DOCS_PATH) -> dict:
     """
     Full ingestion pipeline:

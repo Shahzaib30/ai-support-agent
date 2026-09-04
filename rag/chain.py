@@ -19,9 +19,13 @@ def retrieve(question: str) -> list[dict]:
     Search FAISS for relevant chunks.
     Returns top 5 chunks.
     """
-    chunks = search(question, top_k=5)
-    logger.debug(f"Retrieved {len(chunks)} chunks")
-    return chunks
+    try:
+        chunks = search(question, top_k=5)
+        logger.debug(f"Retrieved {len(chunks)} chunks")
+        return chunks
+    except Exception as e:
+        logger.error(f"Error retrieving chunks: {e}")
+        return []
 
 
 def generate(
