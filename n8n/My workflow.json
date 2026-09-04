@@ -1,0 +1,212 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dc5a5fff-4d7c-49e5-9b23-285e27fdda7c",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -384,
+        -368
+      ],
+      "id": "aca861d6-2a34-4606-9e10-a044cbaa46ea",
+      "name": "Webhook",
+      "webhookId": "dc5a5fff-4d7c-49e5-9b23-285e27fdda7c"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:8000/chat",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "telegram_chat_id",
+              "value": "={{ $json.body.telegram_chat_id }}"
+            },
+            {
+              "name": "message",
+              "value": "={{ $json.body.message }}"
+            },
+            {
+              "name": "customer_name",
+              "value": "={{ $json.body.customer_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -160,
+        -368
+      ],
+      "id": "54e8b354-571a-4def-b21b-6ca2a457589a",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b3e8775f-69d3-4512-9d05-0f31571d81e1",
+              "leftValue": "={{ $json.escalated }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        64,
+        -368
+      ],
+      "id": "40b3535d-038a-43ac-b082-695e47c768e7",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#escalations",
+          "mode": "name"
+        },
+        "text": "=🚨 Escalation Alert Customer: {{ $('Webhook').item.json.body.customer_name }}\nMessage: {{ $('Webhook').item.json.body.message }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.5,
+      "position": [
+        288,
+        -464
+      ],
+      "id": "b86d0e13-e092-48a9-8034-7c6ccb2884ae",
+      "name": "Send a message",
+      "webhookId": "cec79695-8d5f-4e48-8e8c-bade59420537",
+      "credentials": {
+        "slackApi": {
+          "id": "xNSy95eqqzBSbtwy",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $('HTTP Request').item.json.answer }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        288,
+        -272
+      ],
+      "id": "bc51f73b-fa1f-4c37-81cd-95e7d4543095",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "Our support team has been notified. Someone will reach out shortly. ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        512,
+        -464
+      ],
+      "id": "4488190d-5b4f-4089-8558-f70ba099ffea",
+      "name": "Respond to Webhook1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "f9766679-080c-4c52-bf22-c15edb20aab0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "af4daef0ae2a3a2556729950ce1e5b41920359ed49b88da2a2f48a4a7c3970f8"
+  },
+  "nodeGroups": [],
+  "id": "JluwBiXo7IZYOOts",
+  "tags": []
+}
