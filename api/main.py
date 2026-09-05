@@ -17,37 +17,19 @@ from openai import OpenAI
 sys.path.append("./rag")
 sys.path.append("./sentiment")
 from chain import run_rag_pipeline
-from analyzer import run_sentiment_pipeline
+from analyzer import analyze, check_escalation
 
 load_dotenv()
 
 # ─────────────────────────────────────────
 # PROMETHEUS METRICS
 # ─────────────────────────────────────────
-MESSAGES_TOTAL = Counter(
-    "messages_total",
-    "Total messages processed"
-)
-ESCALATIONS_TOTAL = Counter(
-    "escalations_total",
-    "Total escalations triggered"
-)
-CACHE_HITS = Counter(
-    "cache_hits_total",
-    "Total Redis cache hits"
-)
-CACHE_MISSES = Counter(
-    "cache_misses_total",
-    "Total Redis cache misses"
-)
-RESPONSE_TIME = Histogram(
-    "rag_response_seconds",
-    "RAG pipeline response time in seconds"
-)
-ACTIVE_CONVERSATIONS = Gauge(
-    "active_conversations",
-    "Currently active conversations"
-)
+MESSAGES_TOTAL = Counter("messages_total", "Total messages processed")
+ESCALATIONS_TOTAL = Counter("escalations_total", "Total escalations triggered")
+CACHE_HITS = Counter("cache_hits_total", "Total Redis cache hits")
+CACHE_MISSES = Counter("cache_misses_total", "Total Redis cache misses")
+RESPONSE_TIME = Histogram("rag_response_seconds", "RAG pipeline response time in seconds")
+ACTIVE_CONVERSATIONS = Gauge("active_conversations", "Currently active conversations")
 
 # ─────────────────────────────────────────
 # GLOBALS
@@ -76,6 +58,10 @@ async def lifespan(app: FastAPI):
     )
     logger.success("Database connection pool created")
 
+    count = await db_pool.fetchval("SELECT COUNT(*) FROM conversations")
+    ACTIVE_CONVERSATIONS.set(count or 0)
+    logger.info(f"Restored {count} conversations to gauge")
+    
     redis_client = aioredis.from_url(
         os.getenv("REDIS_URL", "redis://localhost:6379"),
         encoding="utf-8",
@@ -94,11 +80,7 @@ async def lifespan(app: FastAPI):
 # ─────────────────────────────────────────
 # APP
 # ─────────────────────────────────────────
-app = FastAPI(
-    title="AI Support Agent",
-    version="1.0.0",
-    lifespan=lifespan,
-)
+app = FastAPI(title="AI Support Agent", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -192,14 +174,9 @@ async def save_message(
                (conversation_id, role, content, sentiment_score,
                 sentiment_label, rag_used, cache_hit, response_time_ms)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8)""",
-            conversation_id,
-            role,
-            content,
-            sentiment_score,
-            sentiment_label,
-            rag_used,
-            cache_hit,
-            response_ms,
+            conversation_id, role, content,
+            sentiment_score, sentiment_label,
+            rag_used, cache_hit, response_ms,
         )
 
 
@@ -225,10 +202,11 @@ async def get_sentiment_history(conversation_id: str) -> list[dict]:
                ORDER BY created_at DESC LIMIT 10""",
             conversation_id,
         )
-    return [
+    result = [
         {"label": r["sentiment_label"], "score": r["sentiment_score"]}
-        for r in reversed(rows)
+        for r in rows
     ]
+    return list(reversed(result))
 
 
 async def mark_escalated(conversation_id: str, reason: str) -> None:
@@ -312,16 +290,29 @@ async def chat(request: ChatRequest):
         answer = rag_result["answer"]
         await set_cache(request.message, answer)
 
-    # step 4: sentiment
-    sentiment_history = await get_sentiment_history(conversation_id)
-    sentiment_result  = run_sentiment_pipeline(
-        message=request.message,
-        sentiment_history=sentiment_history,
-    )
-    current_sentiment = sentiment_result["current"]
-    escalation        = sentiment_result["escalation"]
+    # step 4: analyze sentiment of current message
+    current_sentiment = analyze(request.message)
+    response_ms = int((time.time() - start_time) * 1000)
 
-    # step 5: escalation
+    # step 5: save user message FIRST (so it's in history for escalation check)
+    await save_message(
+        conversation_id=conversation_id,
+        role="user",
+        content=request.message,
+        sentiment_score=current_sentiment["score"],
+        sentiment_label=current_sentiment["label"],
+        rag_used=not cache_hit,
+        cache_hit=cache_hit,
+        response_ms=response_ms,
+    )
+
+    # step 6: fetch full sentiment history (now includes current message)
+    sentiment_history = await get_sentiment_history(conversation_id)
+    logger.debug(f"Sentiment history ({len(sentiment_history)} messages): {sentiment_history}")
+
+    # step 7: check escalation against full history
+    escalation = check_escalation(sentiment_history)
+
     escalated = False
     if escalation["should_escalate"]:
         escalated = True
@@ -334,18 +325,7 @@ async def chat(request: ChatRequest):
             reason=escalation["reason"],
         )
 
-    # step 6: log to postgres
-    response_ms = int((time.time() - start_time) * 1000)
-    await save_message(
-        conversation_id=conversation_id,
-        role="user",
-        content=request.message,
-        sentiment_score=current_sentiment["score"],
-        sentiment_label=current_sentiment["label"],
-        rag_used=not cache_hit,
-        cache_hit=cache_hit,
-        response_ms=response_ms,
-    )
+    # step 8: save bot message
     await save_message(
         conversation_id=conversation_id,
         role="assistant",
@@ -354,11 +334,11 @@ async def chat(request: ChatRequest):
 
     logger.success(
         f"Done in {response_ms}ms — "
-        f"sentiment: {current_sentiment['label']} — "
+        f"sentiment: {current_sentiment['label']} ({current_sentiment['score']}) — "
+        f"consecutive negatives: {escalation['consecutive_negatives']} — "
         f"escalated: {escalated}"
     )
 
-    # step 7: return
     return ChatResponse(
         answer=answer,
         escalated=escalated,

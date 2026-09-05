@@ -28,3 +28,4 @@ tenacity
 loguru
 numpy
 fastembed
+jaraco.classes

@@ -22,31 +22,27 @@ logger.info("Sentiment thresholds initialized.")
 
 
 def analyze(text: str) -> dict:
-    """
-    Analyze sentiment of one message using DeepSeek.
- 
-    Returns:
-    {
-      label: "positive" | "neutral" | "negative"
-      score: float between -1.0 and 1.0
-    }
-    """
-    prompt = f"""Analyze the sentiment of this customer support message.
- 
-        Message: "{text}"
-        
-        Reply with ONLY a JSON object in this exact format, nothing else:
-        {{"label": "positive" | "neutral" | "negative", "score": float between -1.0 and 1.0}}
-        
-        Rules:
-        - score  1.0 = very happy
-        - score  0.0 = neutral
-        - score -1.0 = very angry
-        - label must match score:
-        positive → score > 0.5
-        neutral  → score between -0.5 and 0.5
-        negative → score < -0.5"""
- 
+
+    prompt = f"""You are a sentiment analyzer for customer support.
+
+Message: "{text}"
+
+Rules:
+- negative: customer is CLEARLY angry, frustrated, or complaining
+- neutral: casual phrases, short responses, confusion, greetings
+- positive: happy, satisfied, thankful
+
+Examples:
+"oh no" → neutral
+"uh no" → neutral  
+"wtf" → neutral (not clearly angry enough)
+"this is terrible I want a refund NOW" → negative
+"your service is awful" → negative
+"ok great" → positive
+"how can you help me" → neutral
+
+Reply ONLY with JSON:
+{{"label": "positive" | "neutral" | "negative", "score": float -1.0 to 1.0}}"""
     try:
         response = client.chat.completions.create(
             model=MODEL,
