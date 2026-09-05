@@ -47,6 +47,20 @@ services:
     restart: unless-stopped
     networks:
       - support-network
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ai-support-frontend
+    ports:
+      - "3001:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - support-network
 
   # ─────────────────────────────────────────
   # REDIS
