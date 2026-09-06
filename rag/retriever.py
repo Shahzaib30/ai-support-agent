@@ -8,13 +8,10 @@ from fastembed import TextEmbedding
 
 load_dotenv()
 
-# ─────────────────────────────────────────
-# CONFIG
-# ─────────────────────────────────────────
+
 FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "./vector_store/faiss_index")
 TOP_K            = 5
 
-# load embedding model once
 embedding_model = TextEmbedding("BAAI/bge-small-en-v1.5")
 
 

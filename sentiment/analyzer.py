@@ -76,7 +76,6 @@ Reply ONLY with JSON:
  
  
 
-# track conversation sentiment 
 
 def check_escalation(sentiment_history: list[dict]) -> dict:
     """
@@ -117,7 +116,6 @@ def check_escalation(sentiment_history: list[dict]) -> dict:
  
 
 
-# step 3 -> full pipeline
 
 def run_sentiment_pipeline(
     message:           str,
