@@ -8,7 +8,7 @@ The system automatically receives customer messages, searches company knowledge 
 
 ---
 
-## ✨ Demo
+## Demo
 
 ### n8n Automation Workflow
 

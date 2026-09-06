@@ -16,9 +16,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 load_dotenv()
 
-# ─────────────────────────────────────────
-# CONFIG
-# ─────────────────────────────────────────
+
 DOCS_PATH        = "./docs"
 FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "./vector_store/faiss_index")
 CHUNK_SIZE       = 512
@@ -28,9 +26,7 @@ CHUNK_OVERLAP    = 64
 embedding_model = TextEmbedding("BAAI/bge-small-en-v1.5")
 
 
-# ─────────────────────────────────────────
-# STEP 1 — LOAD DOCUMENTS
-# ─────────────────────────────────────────
+
 def load_documents(docs_path: str = DOCS_PATH) -> list:
     """
     Load all documents from docs folder.
@@ -69,9 +65,7 @@ def load_documents(docs_path: str = DOCS_PATH) -> list:
     return documents
 
 
-# ─────────────────────────────────────────
-# STEP 2 — CHUNK DOCUMENTS
-# ─────────────────────────────────────────
+
 def chunk_documents(documents: list) -> list:
     """
     Split documents into smaller chunks.
@@ -89,9 +83,7 @@ def chunk_documents(documents: list) -> list:
     return chunks
 
 
-# ─────────────────────────────────────────
-# STEP 3 — EMBED CHUNKS
-# ─────────────────────────────────────────
+
 def embed_chunks(chunks: list) -> tuple:
     """
     Convert chunks to vectors using fastembed.
@@ -119,9 +111,7 @@ def embed_chunks(chunks: list) -> tuple:
     return embeddings, texts, metas
 
 
-# ─────────────────────────────────────────
-# STEP 4 — BUILD FAISS INDEX
-# ─────────────────────────────────────────
+
 def build_faiss_index(embeddings: np.ndarray) -> faiss.IndexFlatIP:
     """
     Build FAISS index from embeddings.
@@ -140,9 +130,7 @@ def build_faiss_index(embeddings: np.ndarray) -> faiss.IndexFlatIP:
     return index
 
 
-# ─────────────────────────────────────────
-# STEP 5 — SAVE TO DISK
-# ─────────────────────────────────────────
+
 def save_index(
     index:     faiss.IndexFlatIP,
     texts:     list,
@@ -165,9 +153,7 @@ def save_index(
     logger.success(f"Saved to {path} — {index.ntotal} vectors")
 
 
-# ─────────────────────────────────────────
-# MAIN
-# ─────────────────────────────────────────
+
 def ingest(docs_path: str = DOCS_PATH) -> dict:
     """
     Full ingestion pipeline:
