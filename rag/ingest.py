@@ -22,7 +22,6 @@ FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "./vector_store/faiss_index")
 CHUNK_SIZE       = 512
 CHUNK_OVERLAP    = 64
 
-# load embedding model once
 embedding_model = TextEmbedding("BAAI/bge-small-en-v1.5")
 
 
