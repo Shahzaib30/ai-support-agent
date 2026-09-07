@@ -24,7 +24,7 @@ CHUNK_OVERLAP    = 64
 
 embedding_model = TextEmbedding("BAAI/bge-small-en-v1.5")
 
-
+# it takes all of the documents in the docs folder, splits them into chunks, embeds them, and saves the FAISS index to disk
 
 def load_documents(docs_path: str = DOCS_PATH) -> list:
     """
@@ -63,7 +63,7 @@ def load_documents(docs_path: str = DOCS_PATH) -> list:
     logger.info(f"Total documents loaded: {len(documents)}")
     return documents
 
-
+# it is basically splitting the documents into smaller chunks of text, so that they can be embedded and indexed more efficiently
 
 def chunk_documents(documents: list) -> list:
     """
