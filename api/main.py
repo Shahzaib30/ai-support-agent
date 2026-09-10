@@ -249,7 +249,7 @@ async def update_conversation_summary(conversation_id : str, summary : str) -> N
             summary,
             conversation_id,
         )
-        Logger.info(f"Updated conversation {conversation_id} summary: {summary[:80]}...")
+        logger.info(f"Updated conversation {conversation_id} summary: {summary[:80]}...")
 
 async def get_messages_for_summary(conversation_id : str) -> list[dict]:
     async with db_pool.acquire() as conn:
@@ -282,6 +282,63 @@ async def get_conversation_status(conversation_id : str) -> str:
             conversation_id,
         )
     return status or "active"
+
+
+async def check_escalation_timeout(conversation_id: str, timeout_minutes: int = 5) -> tuple[bool,bool]:
+    """Returns (timeout, human replied) timeout -> true if escalation older then timeout minutes
+    human replied -> true if any human agent message exists"""
+
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT escalated_at,
+            EXISTS(
+                SELECT 1 FROM messages
+                WHERE conversation_id = $1
+                AND role = 'human_agent')
+                as human_replied 
+                FROM conversations
+                where id = $1""",
+                conversation_id,
+        )
+
+        if not row or not row["escalated_at"]:
+            return False, False
+
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        escalated_at = row["escalated_at"].replace(tzinfo=timezone.utc)
+        elapsed = (now - escalated_at).total_seconds()/60
+
+        timed_out = elapsed > timeout_minutes
+        human_replied = row["human_replied"]
+
+        logger.info(
+            f"Escalation check: {elapsed:.1f} min elapsed |"
+            f"Human_replied = {human_replied} | time_out = {timed_out}"
+        )
+        return timed_out, human_replied
+
+async def auto_resolve_conversation(conversation_id: str) -> None:
+    """ Auto resolve escalation after timeout. Sets status back to active so bot resume"""
+
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            """UPDATE conversations
+                SET status = 'active', is_escalated = false
+                WHERE id = $1""", 
+                conversation_id,
+        )
+
+        await conn.execute(
+            """UPDATE escalations
+            SET resolved = true, resolved_at = NOW()
+            WHERE conversation_id = $1 AND resolved = false""",
+            conversation_id,
+        )
+
+        logger.info(f"Auto Resolved after timeout: {conversation_id}")
+
 
 # ─────────────────────────────────────────
 # SLACK
@@ -332,14 +389,78 @@ async def chat(request: ChatRequest):
     # hitl gate
     conv_status = await get_conversation_status(conversation_id)
     if conv_status == "escalated":
-        logger.info(f"Conversation {conversation_id} is already escalated. Returning escalation message.")
+        timed_out, human_replied = await check_escalation_timeout(conversation_id, timeout_minutes=5)
+        if human_replied:
+            logger.info("Human agent active - bot stays paused")
+            return ChatResponse(
+                answer = "A human is handling your case. Please wait..",
+                escalated = True,
+                cache_hit = False,
+                sentiment_label = "neutral",
+                sentiment_score = 0.0,
+            )
+        elif not timed_out:
+            logger.info("Waiting for human agent (within timeout)")
+            return ChatResponse(
+                answer = (
+                    "Our support team has been notified",
+                    "A human agent will be with you shortly. Please wait"
+                ),
+                escalated = True,
+                cache_hit = False,
+                sentiment_label = "neutral",
+                sentiment_score = 0.0,
+            )
+
+        else:
+            logger.info("Escalation timed out - bot resuming")
+            await auto_resolve_conversation(conversation_id)
+
+
+    HUMAN_REQUEST_PHRASES = [
+    "talk to agent",     "talk to human",    "talk to a human",
+    "real person",       "human agent",      "connect me to",
+    "transfer me",       "speak to someone", "i want a human",
+    "need a human",      "get me a human",   "want to speak",
+    "want to talk to",   "actual person",    "live agent",
+    "speak to a person", "speak to agent",   "to an agent",
+    "to a human",        "to a human agent", "to a real person",
+    "to a live agent",   "to a support agent","to a support person",
+    "to a support representative", "to a customer service agent",
+    "to a customer service representative", "to a customer support agent",
+    "to a customer support representative", "to a customer care agent",
+    "to a customer care representative", "to a technical support agent",
+    "to a technical support representative", "to a help desk agent",
+    "to a help desk representative", "to a service desk agent",
+    "to a service desk representative", "to a support specialist",
+    "to a customer service specialist", "to a customer support specialist",
+    "to a customer care specialist", "to a technical support specialist",
+    "to a help desk specialist", "to a service desk specialist", "to a support representative", "to a customer service representative",
+    "to a customer support representative", "to a customer care representative", "to a technical support representative", "to a help desk representative",
+    "to a service desk representative", "to a support agent", "to a customer service agent", "to a customer support agent", "to a customer care agent", "to a technical support agent",
+    "to a help desk agent", "to a service desk agent", "to a support specialist", "to a customer service specialist", "to a customer support specialist", "to a customer care specialist", "to a technical support specialist", "to a help desk specialist", "to a service desk specialist", "to a support representative", "to a customer service representative", "to a customer support representative", "to a customer care representative", "to a technical support representative", "to a help desk representative", "to a service desk representative"
+    ]
+
+    if any(phrase in request.message.lower() for phrase in HUMAN_REQUEST_PHRASES):
+        logger.info(f"Explicit human request from: {request.telegram_chat_id}")
+        await mark_escalated(conversation_id, "Customer explicitly requested a human agent")
+        await send_slack_alert(
+            chat_id=request.telegram_chat_id,
+            customer_name=request.customer_name,
+            last_message=request.message,
+            reason="Customer explicitly requested a human agent",
+        )
         return ChatResponse(
-            answer="This conversation has been escalated to a human agent. Please wait for assistance.",
+            answer=(
+                "I'll connect you with a human agent right away. "
+                "Please wait — someone from our team will be with you shortly."
+            ),
             escalated=True,
             cache_hit=False,
             sentiment_label="neutral",
             sentiment_score=0.0,
         )
+
     # step 2: check cache
     cache_hit = False
     answer    = await get_cache(request.message)
