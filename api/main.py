@@ -459,9 +459,45 @@ async def human_reply(request: HumanReplyRequest):
         if not row:
             raise HTTPException(status_code=404, detail="Conversation not found")
     content = (
-        f"[{request.agent_name}]"
+        f"[{request.agent_name}]: {request.message}"
+        if request.agent_name
+        else request.message
     )
 
+    await save_message(
+        conversation_id=request.conversation_id,
+        role="human_agent",
+        content=content,
+
+    )
+
+    logger.info(f"Human agent reply saved for conversation {request.conversation_id}")
+    return {
+        "status" : "ok",
+        "conversation_id" : request.conversation_id,
+                }
+
+@app.get("/messages/{conversation_id}")
+async def get_messages(conversation_id: str, limit: int = 20):
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT role, content, created_at FROM messages
+               WHERE conversation_id = $1
+               ORDER BY created_at ASC LIMIT $2""",
+            conversation_id,
+            limit,
+        )
+    return {
+        "conversation_id" : conversation_id,
+        "messages" : [
+            {
+                "role" : r["role"],
+                "content" : r["content"],
+                "created_at" : r["created_at"].isoformat(),
+            }
+            for r in rows
+        ],
+    }
 
 # ─────────────────────────────────────────
 # INGEST
