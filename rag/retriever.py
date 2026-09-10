@@ -23,6 +23,7 @@ def embed_query(text: str) -> np.ndarray:
     """
     vectors = list(embedding_model.embed([text]))
     return np.array(vectors, dtype=np.float32)
+
 class VectorStore:
     def __init__(self, path: str = FAISS_INDEX_PATH):
         logger.info(f"Loading vector store from: {path}")

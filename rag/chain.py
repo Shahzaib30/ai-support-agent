@@ -27,11 +27,46 @@ def retrieve(question: str) -> list[dict]:
         logger.error(f"Error retrieving chunks: {e}")
         return []
 
+def summarize_conversation(messages: list[dict]) -> str:
+    if not messages:
+        return ""
+    history_text = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in messages)
+    try:
+        response = deepseek.chat.completions.create(
+            model = MODEL,
+            messages = [
+                {
+                    "role" : "system",
+                    "content" : ("You are a conversation summarizer for a customer support System."
+                                 "Summarize the following conversation in 2-3 sentences."
+                                 "Include: the main issue the customer raised"
+                                 "the customer's sentiment (frustrated/neutral/satisfied)"
+                                 "and whether the issue was resolved or still open"
+                                 "Be concise and factual"
+                    ),
+                },
+                {
+                    "role" : "user",
+                    "content" : history_text
+                },
+            ],
+            max_tokens = 150,
+            temperature = 0.1,
+        )
+
+        summary = response.choices[0].message.content.strip()
+        logger.debug(f"Generated summary: {summary[:80]}...")
+        return summary
+
+    except Exception as e:
+        logger.error(f"Error generating summary: {e}")
+        return ""
 
 def generate(
     question:     str,
     chunks:       list[dict],
     chat_history: list[dict] | None = None,
+    long_term_summary: str | None = None,
 ) -> str:
     """
     Send chunks + question to DeepSeek.
@@ -39,11 +74,18 @@ def generate(
     """
     context = "\n\n---\n\n".join([c["text"] for c in chunks])
 
-    system_prompt = """You are a helpful customer support AI assistant.
-Answer questions based ONLY on the provided context.
-If the context does not contain the answer, say:
-"I don't have that information, please contact our support team."
-Keep answers short, friendly, and clear."""
+    summary_section = ""
+    if long_term_summary:
+        summary_section = f"\nPrevious conversation summary:\n{long_term_summary}\n"
+
+    system_prompt = (
+        f"You are a helpful customer support AI assistant."
+        f"{summary_section}\n"
+        f"Answer questions based ONLY on the provided context.\n"
+        f"If the context does not contain the answer, say:\n"
+        f'"I don\'t have that information, please contact our support team."\n'
+        f"Keep answers short, friendly, and clear."
+    )
 
     messages = [{"role": "system", "content": system_prompt}]
 
@@ -70,6 +112,7 @@ Keep answers short, friendly, and clear."""
 @traceable(name="rag_pipeline")
 def run_rag_pipeline(
     question:     str,
+    long_term_summary: str | None = None,
     chat_history: list[dict] | None = None,
 ) -> dict:
     """
@@ -82,7 +125,7 @@ def run_rag_pipeline(
     """
     logger.info(f"RAG pipeline: {question[:60]}...")
     chunks = retrieve(question)
-    answer = generate(question, chunks, chat_history)
+    answer = generate(question, chunks, chat_history, long_term_summary)
 
     return {
         "answer": answer,

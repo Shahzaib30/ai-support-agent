@@ -1,3 +1,4 @@
+from logging import Logger
 import os
 import sys
 import time
@@ -16,7 +17,7 @@ from openai import OpenAI
 
 sys.path.append("./rag")
 sys.path.append("./sentiment")
-from chain import run_rag_pipeline
+from chain import run_rag_pipeline, summarize_conversation
 from analyzer import analyze, check_escalation
 
 load_dotenv()
@@ -107,6 +108,10 @@ class ChatResponse(BaseModel):
     sentiment_label: str
     sentiment_score: float
 
+class HumanReplyRequest(BaseModel):
+    conversation_id: str
+    message: str
+    agent_name : str | None = None
 
 # ─────────────────────────────────────────
 # REDIS HELPERS
@@ -188,8 +193,13 @@ async def get_chat_history(conversation_id: str) -> list[dict]:
                ORDER BY created_at DESC LIMIT 6""",
             conversation_id,
         )
-    return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
-
+    return [
+        {
+            "role":    "assistant" if r["role"] == "human_agent" else r["role"],
+            "content": r["content"],
+        }
+        for r in reversed(rows)
+    ]
 
 async def get_sentiment_history(conversation_id: str) -> list[dict]:
     async with db_pool.acquire() as conn:
@@ -224,6 +234,54 @@ async def mark_escalated(conversation_id: str, reason: str) -> None:
             reason,
         )
 
+async def get_conversation_summary(conversation_id : str) -> str:
+    async with db_pool.acquire() as conn:
+        summary = await conn.fetchval(
+            "SELECT summary FROM conversations where id = $1",
+            conversation_id,
+        )
+        return summary or ""
+
+async def update_conversation_summary(conversation_id : str, summary : str) -> None:
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE conversations SET summary = $1 WHERE id = $2",
+            summary,
+            conversation_id,
+        )
+        Logger.info(f"Updated conversation {conversation_id} summary: {summary[:80]}...")
+
+async def get_messages_for_summary(conversation_id : str) -> list[dict]:
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT role, content FROM messages
+               WHERE conversation_id = $1
+               ORDER BY created_at DESC LIMIT 20""",
+            conversation_id,
+        )
+    return [
+        {
+            "role":    "assistant" if r["role"] == "human_agent" else r["role"],
+            "content": r["content"],
+        }
+        for r in reversed(rows)
+    ]
+
+async def get_total_message_count(conversation_id : str) -> int:
+    async with db_pool.acquire() as conn:
+        count = await conn.fetchval(
+            "SELECT COUNT(*) FROM messages WHERE conversation_id = $1",
+            conversation_id,
+        )    
+    return count or 0
+
+async def get_conversation_status(conversation_id : str) -> str:
+    async with db_pool.acquire() as conn:
+        status = await conn.fetchval(
+            "SELECT status FROM conversations WHERE id = $1",
+            conversation_id,
+        )
+    return status or "active"
 
 # ─────────────────────────────────────────
 # SLACK
@@ -271,7 +329,17 @@ async def chat(request: ChatRequest):
         request.telegram_chat_id,
         request.customer_name,
     )
-
+    # hitl gate
+    conv_status = await get_conversation_status(conversation_id)
+    if conv_status == "escalated":
+        logger.info(f"Conversation {conversation_id} is already escalated. Returning escalation message.")
+        return ChatResponse(
+            answer="This conversation has been escalated to a human agent. Please wait for assistance.",
+            escalated=True,
+            cache_hit=False,
+            sentiment_label="neutral",
+            sentiment_score=0.0,
+        )
     # step 2: check cache
     cache_hit = False
     answer    = await get_cache(request.message)
@@ -282,10 +350,13 @@ async def chat(request: ChatRequest):
     else:
         # step 3: run RAG
         chat_history = await get_chat_history(conversation_id)
-        with RESPONSE_TIME.time():
+        long_term_summary = await get_conversation_summary(conversation_id)
+       
+        if RESPONSE_TIME.time():
             rag_result = run_rag_pipeline(
                 question=request.message,
                 chat_history=chat_history,
+                long_term_summary=long_term_summary,
             )
         answer = rag_result["answer"]
         await set_cache(request.message, answer)
@@ -293,6 +364,14 @@ async def chat(request: ChatRequest):
     # step 4: analyze sentiment of current message
     current_sentiment = analyze(request.message)
     response_ms = int((time.time() - start_time) * 1000)
+
+    total_msgs = await get_total_message_count(conversation_id)
+    if total_msgs > 0 and total_msgs % 10 == 0:
+        logger.info(f"Summarizing conversation {conversation_id} after {total_msgs} messages")
+        messages_to_summarize = await get_messages_for_summary(conversation_id)
+        new_summary = summarize_conversation(messages_to_summarize)
+        if new_summary:
+            await update_conversation_summary(conversation_id, new_summary)
 
     # step 5: save user message FIRST (so it's in history for escalation check)
     await save_message(
@@ -345,6 +424,42 @@ async def chat(request: ChatRequest):
         cache_hit=cache_hit,
         sentiment_label=current_sentiment["label"],
         sentiment_score=current_sentiment["score"],
+        long_term_summary=long_term_summary,
+    )
+
+@app.post("/resolve/{conversation_id}")
+async def resolve_conversation(conversation_id: str):
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id FROM conversations where id = $1::uuid", conversation_id
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        await conn.execute(
+            "UPDATE conversations SET status = 'resolved' WHERE id = $1::uuid",
+            conversation_id,
+        )
+        await conn.execute(
+            "UPDATE escalations SET resolved = true, resolved_at = NOW() WHERE conversation_id = $1::uuid AND resolved = false",
+            conversation_id,
+        )
+    logger.info(f"Conversation {conversation_id} resolved")
+    return {
+        "status" : "resolved",
+        "conversation_id" : conversation_id.capitalize(),
+        "message" : "Bot will now resume answering messages.",
+    }
+
+@app.post("/human_reply")
+async def human_reply(request: HumanReplyRequest):
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id FROM conversations where id = $1::uuid", request.conversation_id
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+    content = (
+        f"[{request.agent_name}]"
     )
 
 
