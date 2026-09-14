@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from prometheus_fastapi_instrumentator import Instrumentator
 from prometheus_client import Counter, Histogram, Gauge
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
@@ -370,11 +370,135 @@ async def send_slack_alert(
             logger.info(f"Slack alert sent for: {chat_id}")
         except Exception as e:
             logger.error(f"Slack alert failed: {e}")
+# whatsapp integration
+
+async def send_whatsapp_message(to: str, message: str) -> None:
+    "Send a text message back to customer via whatsapp cloud api"
+    token = os.getenv("WHATSAPP_ACCESS_TOKEN")
+    phone_number_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+    if not token or not phone_number_id:
+        logger.warning("WhatsApp API not configured")
+        return
+    url = f"https://graph.facebook.com/v17.0/{phone_number_id}/messages"
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to" : to,
+        "type" : "text",
+        "text" : {"body" : message},
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                url, 
+                payload=payload,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10,
+            )
+            logger.info(f"WhatsApp message sent to {to}: {message[:50]}...")
+        except Exception as e:
+            logger.error(f"WhatsApp message failed: {e}")
 
 
 # ─────────────────────────────────────────
 # MAIN ENDPOINT
 # ─────────────────────────────────────────
+
+@app.get("/whatsapp")
+async def whatsapp_verify(request: Request):
+    """Meta calls this once to verify your webhhook.
+    Must Return the challenge string or Meta won't connect."""
+
+    params = dict(request.query_params)
+    mode = params.get("hub.mode")
+    token = params.get("hub.verify_token")
+    challenge = params.get("hub.challenge")
+    verify_token = os.getenv("WHATSAPP_VERIFY_TOKEN")
+
+    if mode == "subscribe" and token == verify_token:
+        logger.info("WhatsApp webhook verified")
+        return int(challenge)
+
+    raise HTTPException(status_code=403, detail="Verification failed")
+
+@app.post("/whatsapp")
+async def whatsapp_webhook(request: Request):
+    """
+    Meta sends all incomming whatsapp messages here. Runs them through exisint chat() logic and replies"""
+
+    body = await request.json()
+    try:
+        entry = body["entry"][0]
+        changes = entry["changes"][0]
+        value = changes["value"]
+
+        if "messages" not in value:
+            return {"status" : "ignored"}
+
+        msg = value["messages"][0]
+        from_number = msg["from"]
+        message_text = msg["text"]["body"]
+        customer_name = value.get("contacts", [{}])[0].get("profile", {}).get("name", None)
+
+        logger.info(f"Received Whatsapp from {from_number}: {message_text[:50]}...")
+
+        conversation_id = await get_or_create_conversation(from_number, customer_name)
+
+        # HITL Gate
+        conv_status = await get_conversation_status(conversation_id)
+        if conv_status == "escalated":
+            timed_out, human_replied = await check_escalation_timeout(conversation_id, timeout_minutes=5)
+            if human_replied:
+                await send_whatsapp_message(from_number, "A human Agentis handling your case. Please wait..")
+                return {"status" : "ok"}
+            elif not timed_out:
+                await send_whatsapp_message(from_number, "Our support team has been notified. A human agent will be with you shortly. Please wait.")
+                return {"status" : "ok"}
+            else:
+                await auto_resolve_conversation(conversation_id)
+
+        # explicit escalation check
+        HUMAN_REQUEST_PHRASES = [
+            "talk to agent",     "talk to human",    "talk to a human",
+            "real person",       "human agent",      "connect me to",
+            "transfer me",       "speak to someone", "i want a human",
+            "need a human",      "get me a human",   "want to speak",
+            "want to talk to",   "actual person",    "live agent",
+            "speak to a person", "speak to agent",   "to an agent",
+            "to a human",        "to a human agent", "to a real person",
+            "to a live agent",   "to a support agent","to a support person",
+            "to a support representative", "to a customer service agent",
+            "to a customer service representative", "to a customer support agent",
+            "to a customer support representative", "to a customer care agent",
+            "to a customer care representative", "to a technical support agent",
+            "to a technical support representative", "to a help desk agent",
+            "to a help desk representative", "to a service desk agent",
+            "to a service desk representative", "to a support specialist",
+            "to a customer service specialist", "to a customer support specialist",
+            "to a customer care specialist", "to a technical support specialist",
+            "to a help desk specialist", "to a service desk specialist", "to a support representative", "to a customer service representative",
+            "to a customer support representative", "to a customer care representative", "to a technical support representative", "to a help desk representative",
+            "to a service desk representative", "to a support agent", "to a customer service agent", "to a customer support agent", "to a customer care agent", "to a technical support agent",
+            "to a help desk agent", "to a service desk agent", "to a support specialist", "to a customer service specialist", "to a customer support specialist", "to a customer care specialist", "to a technical support specialist", "to a help desk specialist", "to a service desk specialist", "to a support representative", "to a customer service representative", "to a customer support representative", "to a customer care representative", "to a technical support representative", "to a help desk representative", "to a service desk representative"
+            ]
+        if any(phrase in message_text.lower() for phrase in HUMAN_REQUEST_PHRASES):
+            await mark_escalated(conversation_id, "Customer explicitly requested a human agent")
+
+            await send_slack_alert(
+                chat_id= from_number,
+                customer_name = customer_name,
+                last_message = message_text,
+                reason = "Customer explicity requested a human agent",
+                
+            )
+
+
+
+
+
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     start_time = time.time()
