@@ -490,13 +490,59 @@ async def whatsapp_webhook(request: Request):
                 customer_name = customer_name,
                 last_message = message_text,
                 reason = "Customer explicity requested a human agent",
-                
+                conversation_id= conversation_id,
             )
+            await send_whatsapp_message(from_number, "I'll connect you with a human agent right away. Please wait — someone from our team will be with you shortly.")
 
+            return {"status" : "ok"}
 
+        # normal rag flow
 
+        chat_history = await get_chat_history(conversation_id)
+        long_term_summary = await get_conversation_summary(conversation_id)
 
+        rag_result = run_rag_pipeline(
+            question = message_text,
+            chat_history = chat_history,
+            long_term_summary = long_term_summary,
+        )
+        answer = rag_result["answer"]
 
+        current_sentiment = analyze(message_text)
+        await save_message(
+            conversation_id = conversation_id,
+            role = "user",
+            sentiment_score = current_sentiment["score"],
+            sentiment_label = current_sentiment["label"],
+            rag_used = True,
+            cache_hit = False,
+        )
+
+        sentiment_history = await get_sentiment_history(conversation_id)
+        escalation = check_escalation(sentiment_history)
+
+        if escalation["should_escalate"]:
+            await mark_escalated(conversation_id, escalation["reason"])
+            await send_slack_alert(
+                chat_id= from_number,
+                customer_name = customer_name,
+                last_message = message_text,
+                reason = escalation["reason"],
+                conversation_id= conversation_id,
+            )
+            answer = "Our support team has been notified. A human agent will be with you shortly. Please wait."
+
+        await save_message(
+            conversation_id = conversation_id,
+            role = "assistant",
+            content = answer,
+        )
+        await send_whatsapp_message(from_number, answer)
+        return {"status" : "ok"}
+
+    except Exception as e:
+        logger.error(f"Error processing WhatsApp webhook: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/chat", response_model=ChatResponse)
