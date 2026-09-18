@@ -107,6 +107,7 @@ class ChatResponse(BaseModel):
     cache_hit:       bool
     sentiment_label: str
     sentiment_score: float
+    conversation_id: str = ""
 
 class HumanReplyRequest(BaseModel):
     conversation_id: str
@@ -568,18 +569,19 @@ async def chat(request: ChatRequest):
                 cache_hit = False,
                 sentiment_label = "neutral",
                 sentiment_score = 0.0,
+                conversation_id = conversation_id,
             )
         elif not timed_out:
             logger.info("Waiting for human agent (within timeout)")
             return ChatResponse(
                 answer = (
-                    "Our support team has been notified. "
-                    "A human agent will be with you shortly. Please wait."
+                    "Our support team has been notified. A human agent will be with you shortly. Please wait."
                 ),
                 escalated = True,
                 cache_hit = False,
                 sentiment_label = "neutral",
                 sentiment_score = 0.0,
+                conversation_id = conversation_id,
             )
 
         else:
@@ -622,8 +624,7 @@ async def chat(request: ChatRequest):
         )
         return ChatResponse(
             answer=(
-                "I'll connect you with a human agent right away. "
-                "Please wait — someone from our team will be with you shortly."
+                "I'll connect you with a human agent right away. Please wait — someone from our team will be with you shortly."
             ),
             escalated=True,
             cache_hit=False,
