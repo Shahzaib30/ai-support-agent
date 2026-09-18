@@ -792,6 +792,23 @@ async def get_messages(conversation_id: str, limit: int = 20):
         ],
     }
 
+@app.get("/conversation/{telegram_chat_id}")
+async def get_conversation_by_chat_id(telegram_chat_id: str):
+    logger.debug(f"Looking up conversation for: {telegram_chat_id}")
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, status FROM conversations WHERE telegram_chat_id = $1",
+            telegram_chat_id,
+        )
+    logger.debug(f"Found: {row}")
+    if not row:
+        return {"conversation_id": None, "status": None}
+    return {
+        "conversation_id": str(row["id"]),
+        "status":          row["status"],
+    }
+
+
 # ─────────────────────────────────────────
 # INGEST
 # ─────────────────────────────────────────
