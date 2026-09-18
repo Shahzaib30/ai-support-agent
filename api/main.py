@@ -630,6 +630,7 @@ async def chat(request: ChatRequest):
             cache_hit=False,
             sentiment_label="neutral",
             sentiment_score=0.0,
+            conversation_id=conversation_id,
         )
 
     # step 2: check cache
