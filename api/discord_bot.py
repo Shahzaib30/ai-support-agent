@@ -30,13 +30,13 @@ async def poll_human_replies():
     while not client.is_closed():
         for user_id, conversation_id in list(escalated_users.items()):
             try:
-                connector = aiohttp.TCPConnector(family=socket.AF_INET)
-                async with aiohttp.ClientSession(connector=connector) as session:
-                    async with session.get(
-                        f"{API_URL}/messages/{conversation_id}",
-                        ssl=False,
-                    ) as res:
-                        data = await res.json()
+                # fetch messages
+                req = urllib.request.Request(
+                    f"{API_URL}/messages/{conversation_id}",
+                    method="GET",
+                )
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    data = json.loads(r.read().decode())
 
                 human_msgs = [
                     m for m in data["messages"]
@@ -50,18 +50,27 @@ async def poll_human_replies():
                     if msg["content"] not in shown_messages[user_id]:
                         shown_messages[user_id].add(msg["content"])
                         user = await client.fetch_user(int(user_id))
-                        await user.send(
-                            f"🧑‍💼 **Support Agent:**\n{msg['content']}"
+                        # find support channel and send there
+                        support_channel = discord.utils.get(
+                            client.get_all_channels(), 
+                            name=SUPPORT_CHANNEL
                         )
+                        if support_channel:
+                            await support_channel.send(
+                                f"🧑‍💼 **Support Agent** → {user.mention}:\n{msg['content']}"
+                            )
+                        else:
+                            await user.send(
+                                f"🧑‍💼 **Support Agent:**\n{msg['content']}"
+                            )
 
                 # check if resolved
-                connector2 = aiohttp.TCPConnector(family=socket.AF_INET)
-                async with aiohttp.ClientSession(connector=connector2) as session:
-                    async with session.get(
-                        f"{API_URL}/conversation/discord_{user_id}",
-                        ssl=False,
-                    ) as res:
-                        conv = await res.json()
+                req2 = urllib.request.Request(
+                    f"{API_URL}/conversation/discord_{user_id}",
+                    method="GET",
+                )
+                with urllib.request.urlopen(req2, timeout=10) as r:
+                    conv = json.loads(r.read().decode())
 
                 if conv.get("status") in ("resolved", "active"):
                     escalated_users.pop(user_id, None)
