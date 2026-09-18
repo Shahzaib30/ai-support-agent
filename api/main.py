@@ -573,8 +573,8 @@ async def chat(request: ChatRequest):
             logger.info("Waiting for human agent (within timeout)")
             return ChatResponse(
                 answer = (
-                    "Our support team has been notified",
-                    "A human agent will be with you shortly. Please wait"
+                    "Our support team has been notified. "
+                    "A human agent will be with you shortly. Please wait."
                 ),
                 escalated = True,
                 cache_hit = False,
@@ -632,6 +632,8 @@ async def chat(request: ChatRequest):
         )
 
     # step 2: check cache
+    long_term_summary = await get_conversation_summary(conversation_id)
+
     cache_hit = False
     answer    = await get_cache(request.message)
 
@@ -641,9 +643,7 @@ async def chat(request: ChatRequest):
     else:
         # step 3: run RAG
         chat_history = await get_chat_history(conversation_id)
-        long_term_summary = await get_conversation_summary(conversation_id)
-       
-        if RESPONSE_TIME.time():
+        with RESPONSE_TIME.time():
             rag_result = run_rag_pipeline(
                 question=request.message,
                 chat_history=chat_history,

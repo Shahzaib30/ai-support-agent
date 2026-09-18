@@ -29,3 +29,5 @@ loguru
 numpy
 fastembed
 jaraco.classes
+discord.py==2.3.2
+aiohttp

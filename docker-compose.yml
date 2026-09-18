@@ -149,6 +149,23 @@ services:
     networks:
       - support-network
 
+  discord:
+    build: .
+    container_name: ai-support-discord
+    command: python api/discord_bot.py
+    env_file:
+      - .env
+    depends_on:
+      api:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - support-network
+
 # ─────────────────────────────────────────
 # VOLUMES
 # data that persists when containers restart
