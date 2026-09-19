@@ -1,3 +1,5 @@
+import datetime
+from email import message
 import os
 import json
 import asyncio
@@ -7,6 +9,7 @@ import aiohttp
 import discord
 from loguru import logger
 from dotenv import load_dotenv
+from datetime import datetime
 
 load_dotenv()
 
@@ -20,7 +23,7 @@ client = discord.Client(intents=intents)
 
 # track escalated discord users
 # { discord_user_id: conversation_id }
-escalated_users: dict[str, str] = {}
+escalated_users: dict[str, dict] = {}
 shown_messages:  dict[str, set] = {}
 
 
@@ -28,9 +31,12 @@ async def poll_human_replies():
     """Poll for human agent replies every 5 seconds."""
     await client.wait_until_ready()
     while not client.is_closed():
-        for user_id, conversation_id in list(escalated_users.items()):
+        for user_id, escalation_data in list(escalated_users.items()):
             try:
                 # fetch messages
+                conversation_id = escalation_data["conversation_id"]
+                escalated_at    = escalation_data["escalated_at"]
+
                 req = urllib.request.Request(
                     f"{API_URL}/messages/{conversation_id}",
                     method="GET",
@@ -41,13 +47,17 @@ async def poll_human_replies():
                 human_msgs = [
                     m for m in data["messages"]
                     if m["role"] == "human_agent"
+                    and m["created_at"] > escalated_at
                 ]
 
                 if user_id not in shown_messages:
                     shown_messages[user_id] = set()
 
                 for msg in human_msgs:
-                    if msg["content"] not in shown_messages[user_id]:
+
+                    msg_key = msg["created_at"]
+
+                    if msg_key not in shown_messages[user_id]:
                         shown_messages[user_id].add(msg["content"])
                         user = await client.fetch_user(int(user_id))
                         # find support channel and send there
@@ -136,8 +146,11 @@ async def on_message(message: discord.Message):
 
             if escalated:
                 # track this user as escalated
-                escalated_users[str(message.author.id)] = data.get("conversation_id", "")
-                shown_messages[str(message.author.id)]  = set()
+                escalated_users[str(message.author.id)] = {
+                    "conversation_id": data.get("conversation_id", ""),
+                    "escalated_at":    datetime.utcnow().isoformat(),
+}
+                shown_messages[str(message.author.id)] = set()
                 response = f"🚨 **Escalated to human support**\n{answer}"
             else:
                 # remove from escalated if resolved

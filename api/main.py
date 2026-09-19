@@ -345,6 +345,7 @@ async def auto_resolve_conversation(conversation_id: str) -> None:
 # SLACK
 # ─────────────────────────────────────────
 async def send_slack_alert(
+    conversation_id: str,
     chat_id:       str,
     customer_name: str | None,
     last_message:  str,
@@ -361,7 +362,12 @@ async def send_slack_alert(
             f"🚨 *Escalation Alert*\n"
             f"*Customer:* {name}\n"
             f"*Reason:* {reason}\n"
-            f"*Last message:* {last_message[:200]}"
+            f"*Last message:* {last_message[:200]}\n"
+            f"*Conversation ID:* `{conversation_id}`\n\n"
+            f"*To reply:* paste this in thread:\n"
+            f"{conversation_id} | your message here`\n\n"
+            f"*To resolve:* paste this in thread:\n"
+            f"{conversation_id} | resolved`"
         )
     }
 
@@ -621,6 +627,7 @@ async def chat(request: ChatRequest):
             customer_name=request.customer_name,
             last_message=request.message,
             reason="Customer explicitly requested a human agent",
+            conversation_id=conversation_id,
         )
         return ChatResponse(
             answer=(
