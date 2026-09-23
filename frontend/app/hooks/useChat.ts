@@ -39,6 +39,7 @@ useEffect(() => {
           telegram_chat_id: sessionId,
           message: text.trim(),
           customer_name: "Web User",
+          channel: "web",
         }),
       });
 

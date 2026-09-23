@@ -1,0 +1,242 @@
+{
+  "name": "Slack HITL replies",
+  "nodes": [
+    {
+      "parameters": {
+        "trigger": [
+          "message"
+        ],
+        "channelId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "escalations"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.slackTrigger",
+      "typeVersion": 1,
+      "position": [
+        -672,
+        0
+      ],
+      "id": "5d1f6a52-0b0a-4c55-9a55-1b8f8d0f6a01",
+      "name": "Slack Trigger",
+      "webhookId": "d2c38200-08f9-48fd-b81c-29b6cdf1d93f",
+      "credentials": {
+        "slackApi": {
+          "id": "xNSy95eqqzBSbtwy",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a1c7d6f0-5a3e-4a52-8f0e-0d8c2b7e1c11",
+              "leftValue": "={{ $json.user }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "a1c7d6f0-5a3e-4a52-8f0e-0d8c2b7e1c12",
+              "leftValue": "={{ $json.bot_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notExists",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "a1c7d6f0-5a3e-4a52-8f0e-0d8c2b7e1c13",
+              "leftValue": "={{ $json.thread_ts }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -448,
+        0
+      ],
+      "id": "6e2a7b63-1c1b-4d66-8b66-2c9c9e1a7b02",
+      "name": "Is real user reply",
+      "notes": "Thread replies from a real Slack user (not a bot)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Slack thread reply format:  UUID | message text\nconst item = $input.first().json;\nconst text = (item.text || '').trim();\n\nconst match = text.match(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\\s*\\|\\s*([\\s\\S]+)$/);\n\n// Not in \"UUID | message\" format -> stop the workflow for this item\nif (!match) {\n  return [];\n}\n\nconst agentName = item.user_profile?.display_name ||\n                  item.user_profile?.real_name ||\n                  'Support Agent';\n\nreturn [{\n  json: {\n    conversation_id: match[1],\n    message: match[2].trim(),\n    agent_name: agentName,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        0
+      ],
+      "id": "7f3b8c74-2d2c-4e77-9c77-3dad0f2b8c03",
+      "name": "Extract conversation_id and message"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b2d8e7a1-6b4f-4b63-9a1f-1e9d3c8f2d21",
+              "leftValue": "={{ $json.message.toLowerCase().trim() === 'resolved' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "8a4c9d85-3e3d-4f88-8d88-4ebe1a3c9d04",
+      "name": "Is resolved"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://api:8000/resolve/{{ $json.conversation_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        240,
+        -112
+      ],
+      "id": "9b5dae96-4f4e-4a99-9e99-5fcf2b4dae05",
+      "name": "Resolve conversation"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:8000/human_reply",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "conversation_id",
+              "value": "={{ $json.conversation_id }}"
+            },
+            {
+              "name": "message",
+              "value": "={{ $json.message }}"
+            },
+            {
+              "name": "agent_name",
+              "value": "={{ $json.agent_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        240,
+        112
+      ],
+      "id": "ac6ebfa7-505f-4baa-8faa-60d03c5ebf06",
+      "name": "Send human reply"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Slack Trigger": {
+      "main": [
+        [
+          {
+            "node": "Is real user reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is real user reply": {
+      "main": [
+        [
+          {
+            "node": "Extract conversation_id and message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract conversation_id and message": {
+      "main": [
+        [
+          {
+            "node": "Is resolved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is resolved": {
+      "main": [
+        [
+          {
+            "node": "Resolve conversation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send human reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

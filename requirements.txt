@@ -11,6 +11,8 @@ langgraph
 langsmith
 openai
 faiss-cpu
+rank-bm25
+flashrank
 tavily-python
 asyncpg
 sqlalchemy

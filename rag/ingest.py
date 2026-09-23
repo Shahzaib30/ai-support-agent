@@ -1,11 +1,13 @@
 import os
 import json
+import pickle
 import faiss
 import numpy as np
 from pathlib import Path
 from loguru import logger
 from dotenv import load_dotenv
 from fastembed import TextEmbedding
+from rank_bm25 import BM25Okapi
 from langchain_community.document_loaders import (
     PyPDFLoader,
     TextLoader,
@@ -13,6 +15,8 @@ from langchain_community.document_loaders import (
     DirectoryLoader,
 )
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+from rag.text_utils import tokenize
 
 load_dotenv()
 
@@ -130,14 +134,27 @@ def build_faiss_index(embeddings: np.ndarray) -> faiss.IndexFlatIP:
 
 
 
+def build_bm25_index(texts: list) -> BM25Okapi:
+    """
+    Build a sparse BM25 keyword index over the same chunks as the FAISS
+    (dense) index, so retrieval can combine both via hybrid search.
+    """
+    logger.info("Building BM25 sparse index...")
+    tokenized = [tokenize(text) for text in texts]
+    bm25 = BM25Okapi(tokenized)
+    logger.info(f"BM25 index built — {len(tokenized)} documents")
+    return bm25
+
+
 def save_index(
     index:     faiss.IndexFlatIP,
     texts:     list,
     metadatas: list,
+    bm25:      BM25Okapi,
     path:      str = FAISS_INDEX_PATH,
 ) -> None:
     """
-    Save FAISS index + texts + metadata to disk.
+    Save FAISS index + texts + metadata + BM25 index to disk.
     """
     Path(path).mkdir(parents=True, exist_ok=True)
 
@@ -148,6 +165,9 @@ def save_index(
 
     with open(f"{path}/metadata.json", "w", encoding="utf-8") as f:
         json.dump(metadatas, f, ensure_ascii=False, indent=2)
+
+    with open(f"{path}/bm25.pkl", "wb") as f:
+        pickle.dump(bm25, f)
 
     logger.success(f"Saved to {path} — {index.ntotal} vectors")
 
@@ -170,7 +190,8 @@ def ingest(docs_path: str = DOCS_PATH) -> dict:
 
     embeddings, texts, metadatas = embed_chunks(chunks)
     index = build_faiss_index(embeddings)
-    save_index(index, texts, metadatas)
+    bm25 = build_bm25_index(texts)
+    save_index(index, texts, metadatas, bm25)
 
     return {
         "status":    "success",

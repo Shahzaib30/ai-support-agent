@@ -1,19 +1,15 @@
-import datetime
-from email import message
 import os
 import json
 import asyncio
-import socket
 import urllib.request
-import aiohttp
 import discord
+from datetime import datetime, timezone, timedelta
 from loguru import logger
 from dotenv import load_dotenv
-from datetime import datetime
 
 load_dotenv()
 
-API_URL      = "http://api:8000"
+API_URL         = os.getenv("API_URL", "http://api:8000")
 SUPPORT_CHANNEL = "support"
 
 intents = discord.Intents.default()
@@ -21,58 +17,58 @@ intents.message_content = True
 
 client = discord.Client(intents=intents)
 
-# track escalated discord users
-# { discord_user_id: conversation_id }
 escalated_users: dict[str, dict] = {}
-shown_messages:  dict[str, set] = {}
+shown_messages:  dict[str, set]  = {}
 
 
 async def poll_human_replies():
-    """Poll for human agent replies every 5 seconds."""
+    logger.info("Polling task started")
     await client.wait_until_ready()
+    logger.info("Polling task running")
+
     while not client.is_closed():
+        if escalated_users:
+            logger.debug(f"Polling {len(escalated_users)} escalated users")
+
         for user_id, escalation_data in list(escalated_users.items()):
             try:
-                # fetch messages
                 conversation_id = escalation_data["conversation_id"]
-                escalated_at    = escalation_data["escalated_at"]
 
+                # fetch messages
                 req = urllib.request.Request(
-                    f"{API_URL}/messages/{conversation_id}",
+                    f"{API_URL}/messages/{conversation_id}?limit=100",
                     method="GET",
                 )
                 with urllib.request.urlopen(req, timeout=10) as r:
                     data = json.loads(r.read().decode())
 
+                # escalated_at is tz-aware, created_at is naive UTC: compare the
+                # first 19 chars (YYYY-MM-DDTHH:MM:SS) as strings
+                escalated_at_clean = escalation_data["escalated_at"][:19]
                 human_msgs = [
                     m for m in data["messages"]
                     if m["role"] == "human_agent"
-                    and m["created_at"] > escalated_at
+                    and m["created_at"][:19] > escalated_at_clean
                 ]
+                logger.debug(
+                    f"Found {len(human_msgs)} human messages for {user_id} "
+                    f"(conversation {conversation_id})"
+                )
 
                 if user_id not in shown_messages:
                     shown_messages[user_id] = set()
 
                 for msg in human_msgs:
-
                     msg_key = msg["created_at"]
+                    if msg_key in shown_messages[user_id]:
+                        continue
 
-                    if msg_key not in shown_messages[user_id]:
-                        shown_messages[user_id].add(msg["content"])
-                        user = await client.fetch_user(int(user_id))
-                        # find support channel and send there
-                        support_channel = discord.utils.get(
-                            client.get_all_channels(), 
-                            name=SUPPORT_CHANNEL
-                        )
-                        if support_channel:
-                            await support_channel.send(
-                                f"🧑‍💼 **Support Agent** → {user.mention}:\n{msg['content']}"
-                            )
-                        else:
-                            await user.send(
-                                f"🧑‍💼 **Support Agent:**\n{msg['content']}"
-                            )
+                    user = await client.fetch_user(int(user_id))
+                    await user.send(f"🧑‍💼 **Support Agent:**\n{msg['content']}")
+                    shown_messages[user_id].add(msg_key)
+                    logger.info(
+                        f"Sent DM to {user_id}: {msg['content'][:50]}"
+                    )
 
                 # check if resolved
                 req2 = urllib.request.Request(
@@ -98,7 +94,7 @@ async def poll_human_replies():
 @client.event
 async def on_ready():
     logger.success(f"Logged in as {client.user}")
-    client.loop.create_task(poll_human_replies())
+    asyncio.get_event_loop().create_task(poll_human_replies())
 
 
 @client.event
@@ -126,6 +122,7 @@ async def on_message(message: discord.Message):
                 "telegram_chat_id": f"discord_{message.author.id}",
                 "message":          text,
                 "customer_name":    str(message.author.display_name),
+                "channel":          "discord",
             }).encode()
 
             req = urllib.request.Request(
@@ -139,21 +136,51 @@ async def on_message(message: discord.Message):
                 data = json.loads(r.read().decode())
 
             logger.debug(f"API response received: {data.get('answer', '')[:50]}")
+            logger.debug(f"escalated={data.get('escalated')}, conversation_id={data.get('conversation_id')}")
 
             answer    = data["answer"]
             escalated = data["escalated"]
-            logger.debug(f"escalated={escalated}, conversation_id={data.get('conversation_id')}")
 
             if escalated:
-                # track this user as escalated
-                escalated_users[str(message.author.id)] = {
-                    "conversation_id": data.get("conversation_id", ""),
-                    "escalated_at":    datetime.utcnow().isoformat(),
-}
-                shown_messages[str(message.author.id)] = set()
+                conv_id = data.get("conversation_id", "")
+                already_tracked = (
+                    escalated_users.get(str(message.author.id), {}).get("conversation_id") == conv_id
+                )
+                if already_tracked:
+                    # follow-up during an open escalation: message was forwarded to
+                    # the agent, keep the existing tracking state
+                    logger.info(f"Forwarded follow-up from {message.author.id} to agent")
+                    await message.reply(answer)
+                    return
+                if conv_id:
+                    escalated_users[str(message.author.id)] = {
+                        "conversation_id": conv_id,
+                        "escalated_at":    datetime.now(timezone.utc).isoformat(),
+                    }
+                    # mark messages from earlier escalations as already shown
+                    already_shown = set()
+                    try:
+                        req_msgs = urllib.request.Request(
+                            f"{API_URL}/messages/{conv_id}",
+                            method="GET",
+                        )
+                        with urllib.request.urlopen(req_msgs, timeout=10) as r:
+                            existing = json.loads(r.read().decode())
+                            one_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+                        already_shown = {
+                        m["created_at"] for m in existing["messages"]
+                        if m["role"] == "human_agent"
+                        and m["created_at"] < one_min_ago
+                    }
+                    except Exception as e:
+                        logger.error(f"Could not pre-populate shown messages: {e}")
+                    shown_messages[str(message.author.id)] = already_shown
+                    logger.info(
+                        f"Pre-marked {len(already_shown)} old human messages as shown"
+                    )
+                    logger.info(f"Tracking escalation for {message.author.id}: {conv_id}")
                 response = f"🚨 **Escalated to human support**\n{answer}"
             else:
-                # remove from escalated if resolved
                 escalated_users.pop(str(message.author.id), None)
                 response = answer
 

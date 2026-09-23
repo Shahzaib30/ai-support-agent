@@ -1,3 +1,6 @@
 .env
 vector_store/
 docs/
+__pycache__/
+*.pyc
+.venv/

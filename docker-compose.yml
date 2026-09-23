@@ -152,7 +152,7 @@ services:
   discord:
     build: .
     container_name: ai-support-discord
-    command: python api/discord_bot.py
+    command: python -m connectors.discord.bot
     env_file:
       - .env
     depends_on:

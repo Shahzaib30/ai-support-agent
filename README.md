@@ -412,21 +412,40 @@ No manual reporting is required.
 ```text
 ai-support-agent/
 │
+├── connectors/              # channel-specific ingress/egress, normalized to InboundMessage
+│   ├── base.py               # InboundMessage / AgentReply — the channel-agnostic interface
+│   ├── whatsapp/              # WhatsApp Cloud API webhook (router, client, normalizer)
+│   ├── telegram/               # Telegram (via the n8n workflow) request normalizer
+│   ├── discord/                # Discord bot process + normalizer
+│   └── web/                     # POST /chat — used directly by the frontend
+│
+├── core/
+│   └── agent.py              # single channel-agnostic pipeline every connector calls into
+│
+├── database/                 # all persistence — Postgres pool, conversations, messages, cache, stats
+│
+├── escalation/                # 3-strike sentiment state machine, HITL gate, Slack relay
+│
+├── api/
+│   ├── main.py                # FastAPI app init, middleware, router includes only
+│   ├── metrics.py             # Prometheus counters/gauges
+│   └── routes/                # health, stats, resolve, human_reply, messages, ingest
+│
 ├── rag/
-│   ├── ingest.py
-│   ├── retriever.py
-│   └── chain.py
+│   ├── ingest.py              # load → chunk → embed → FAISS + BM25 index
+│   ├── retriever.py           # async hybrid (dense + BM25) search with RRF fusion
+│   ├── reranker.py            # cross-encoder reranking (FlashRank)
+│   ├── condenser.py           # rewrites follow-ups into standalone search queries
+│   └── chain.py               # orchestrates the above + similarity-threshold escape hatch
 │
 ├── sentiment/
-│   └── analyzer.py
+│   └── analyzer.py           # async LLM sentiment classification
 │
 ├── n8n/
 │   └── My workflow.json
 │
 ├── assets/
 │   └── ui.png
-│
-├── Workflow_image.png
 │
 ├── db/
 │   └── schema.sql
@@ -594,7 +613,7 @@ docs/
 Run:
 
 ```bash
-python rag/ingest.py --docs ./docs
+python -m rag.ingest
 ```
 
 The ingestion pipeline processes the documents and prepares them for semantic retrieval.
