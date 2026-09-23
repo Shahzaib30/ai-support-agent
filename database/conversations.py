@@ -4,7 +4,7 @@ from api.metrics import ACTIVE_CONVERSATIONS
 from database.pool import get_pool
 
 
-async def get_or_create_conversation(chat_id: str, customer_name: str | None) -> str:
+async def get_or_create_conversation(chat_id: str, customer_name: str | None, channel: str | None = None) -> str:
     pool = get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -15,13 +15,14 @@ async def get_or_create_conversation(chat_id: str, customer_name: str | None) ->
             return str(row["id"])
 
         new_id = await conn.fetchval(
-            """INSERT INTO conversations (telegram_chat_id, customer_name)
-               VALUES ($1, $2) RETURNING id""",
+            """INSERT INTO conversations (telegram_chat_id, customer_name, channel)
+               VALUES ($1, $2, $3) RETURNING id""",
             chat_id,
             customer_name,
+            channel,
         )
         ACTIVE_CONVERSATIONS.inc()
-        logger.info(f"New conversation: {chat_id}")
+        logger.info(f"New conversation: {chat_id} (channel={channel})")
         return str(new_id)
 
 
@@ -32,7 +33,7 @@ async def get_conversation_status(conversation_id: str) -> str:
             "SELECT status FROM conversations WHERE id = $1",
             conversation_id,
         )
-    return status or "active"
+    return status or "ai_active"
 
 
 async def get_conversation_by_chat_id(chat_id: str) -> dict | None:

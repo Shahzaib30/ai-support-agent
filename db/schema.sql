@@ -5,23 +5,31 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TABLE IF NOT EXISTS conversations (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    -- Customer's external identifier within their channel. Named telegram_chat_id
+    -- for historical reasons (the original integration was Telegram-only); it is
+    -- now a generic per-channel customer id used by every connector.
     telegram_chat_id    VARCHAR(50) UNIQUE NOT NULL,
     customer_name       VARCHAR(100),
+    channel             VARCHAR(20),
     started_at          TIMESTAMP DEFAULT NOW(),
     last_message_at     TIMESTAMP DEFAULT NOW(),
     is_escalated        BOOLEAN DEFAULT FALSE,
     escalated_at        TIMESTAMP,
     total_messages      INTEGER DEFAULT 0,
     avg_sentiment_score FLOAT DEFAULT 0.0,
-    status              VARCHAR(20) DEFAULT 'active'
-                        CHECK (status IN ('active', 'escalated', 'resolved', 'closed'))
+    -- ai_active: bot is answering. human_pending: escalated, waiting for an agent.
+    -- human_active: an agent has replied and is actively handling it.
+    -- resolved/closed: terminal/reporting states; bot resumes answering for either.
+    status              VARCHAR(20) DEFAULT 'ai_active'
+                        CHECK (status IN ('ai_active', 'human_pending', 'human_active', 'resolved', 'closed')),
+    summary             TEXT
 );
 
 
 CREATE TABLE IF NOT EXISTS messages (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     conversation_id     UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    role                VARCHAR(10) NOT NULL CHECK (role IN ('user', 'assistant')),
+    role                VARCHAR(20) NOT NULL CHECK (role IN ('user', 'assistant', 'human_agent')),
     content             TEXT NOT NULL,
     sentiment_score     FLOAT,
     sentiment_label     VARCHAR(10) CHECK (sentiment_label IN ('positive', 'neutral', 'negative')),
@@ -38,6 +46,10 @@ CREATE TABLE IF NOT EXISTS escalations (
     reason              TEXT,
     negative_count      INTEGER,
     slack_notified      BOOLEAN DEFAULT FALSE,
+    -- Timestamp (Slack `ts`) of the escalation alert message, so follow-up
+    -- customer messages can be threaded under it and Workflow B can resolve
+    -- a thread reply back to this escalation via Slack message metadata.
+    slack_message_ts    VARCHAR(32),
     resolved            BOOLEAN DEFAULT FALSE,
     resolved_at         TIMESTAMP,
     created_at          TIMESTAMP DEFAULT NOW()
@@ -70,6 +82,18 @@ CREATE TABLE IF NOT EXISTS daily_summaries (
     avg_response_ms     INTEGER,
     cache_hit_rate      FLOAT,
     created_at          TIMESTAMP DEFAULT NOW()
+);
+
+
+-- Idempotency guard for at-least-once delivery webhooks (WhatsApp, Telegram,
+-- Slack Events retries). (source, event_id) must be unique so a retried
+-- delivery is detected and skipped instead of reprocessed.
+CREATE TABLE IF NOT EXISTS processed_events (
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    source              VARCHAR(20) NOT NULL,
+    event_id            VARCHAR(255) NOT NULL,
+    created_at          TIMESTAMP DEFAULT NOW(),
+    UNIQUE (source, event_id)
 );
 
 

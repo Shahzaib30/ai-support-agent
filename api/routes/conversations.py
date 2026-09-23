@@ -7,6 +7,8 @@ from database.conversations import (
     get_conversation_by_chat_id,
     resolve_conversation,
 )
+from database.escalations import mark_human_active
+from database.idempotency import check_and_record
 from database.messages import get_messages, save_message
 
 router = APIRouter()
@@ -16,6 +18,9 @@ class HumanReplyRequest(BaseModel):
     conversation_id: str
     message: str
     agent_name: str | None = None
+    # Slack message `ts` (or any other stable id from the source system) so a
+    # retried Slack Events delivery doesn't insert the same reply twice.
+    event_id: str | None = None
 
 
 @router.post("/resolve/{conversation_id}")
@@ -37,6 +42,9 @@ async def human_reply(request: HumanReplyRequest):
     if not await conversation_exists(request.conversation_id):
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+    if request.event_id and not await check_and_record("slack_human_reply", request.event_id):
+        return {"status": "duplicate", "conversation_id": request.conversation_id}
+
     content = (
         f"[{request.agent_name}]: {request.message}"
         if request.agent_name
@@ -48,6 +56,7 @@ async def human_reply(request: HumanReplyRequest):
         role="human_agent",
         content=content,
     )
+    await mark_human_active(request.conversation_id)
 
     logger.info(f"Human agent reply saved for conversation {request.conversation_id}")
     return {"status": "ok", "conversation_id": request.conversation_id}

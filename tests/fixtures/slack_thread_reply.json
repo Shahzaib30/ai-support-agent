@@ -1,0 +1,10 @@
+{
+  "_comment": "Reference shape only — this is what Slack's Events API delivers to n8n's Slack Trigger node in Workflow B for a thread reply. It is NOT consumed directly by the Python backend; Workflow B parses it in n8n and calls /human_reply or /resolve/{id}.",
+  "type": "message",
+  "channel": "C0123ESCALATIONS",
+  "user": "U0456AGENT",
+  "text": "We've issued the refund, should land in 3-5 days.",
+  "ts": "1716400123.000200",
+  "thread_ts": "1716400050.000100",
+  "team": "T0789WORKSPACE"
+}

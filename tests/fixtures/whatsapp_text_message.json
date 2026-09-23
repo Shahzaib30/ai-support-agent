@@ -1,0 +1,35 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "102290129340398",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "15550001111",
+              "phone_number_id": "106540352242922"
+            },
+            "contacts": [
+              {
+                "profile": { "name": "Jordan Rivera" },
+                "wa_id": "15558675309"
+              }
+            ],
+            "messages": [
+              {
+                "from": "15558675309",
+                "id": "wamid.HBgLMTU1NTg2NzUzMDkVAgARGBI4RTI4RTVGRUFCMzc3REY3RTUA",
+                "timestamp": "1716400000",
+                "text": { "body": "Do you offer refunds after 30 days?" },
+                "type": "text"
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
+}

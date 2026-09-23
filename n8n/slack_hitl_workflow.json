@@ -1,5 +1,5 @@
 {
-  "name": "Slack HITL replies",
+  "name": "Slack HITL",
   "nodes": [
     {
       "parameters": {
@@ -17,15 +17,15 @@
       "type": "n8n-nodes-base.slackTrigger",
       "typeVersion": 1,
       "position": [
-        -672,
+        -896,
         0
       ],
       "id": "5d1f6a52-0b0a-4c55-9a55-1b8f8d0f6a01",
       "name": "Slack Trigger",
-      "webhookId": "d2c38200-08f9-48fd-b81c-29b6cdf1d93f",
+      "webhookId": "00000000-0000-4000-8000-000000000002",
       "credentials": {
         "slackApi": {
-          "id": "xNSy95eqqzBSbtwy",
+          "id": "REPLACE_WITH_YOUR_SLACK_CREDENTIAL_ID",
           "name": "Slack account"
         }
       }
@@ -78,16 +78,66 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -448,
+        -672,
         0
       ],
       "id": "6e2a7b63-1c1b-4d66-8b66-2c9c9e1a7b02",
-      "name": "Is real user reply",
-      "notes": "Thread replies from a real Slack user (not a bot)"
+      "name": "Is real user thread reply",
+      "notes": "Thread replies from a real Slack user (not a bot, not a top-level channel message)"
     },
     {
       "parameters": {
-        "jsCode": "// Slack thread reply format:  UUID | message text\nconst item = $input.first().json;\nconst text = (item.text || '').trim();\n\nconst match = text.match(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\\s*\\|\\s*([\\s\\S]+)$/);\n\n// Not in \"UUID | message\" format -> stop the workflow for this item\nif (!match) {\n  return [];\n}\n\nconst agentName = item.user_profile?.display_name ||\n                  item.user_profile?.real_name ||\n                  'Support Agent';\n\nreturn [{\n  json: {\n    conversation_id: match[1],\n    message: match[2].trim(),\n    agent_name: agentName,\n  },\n}];"
+        "method": "GET",
+        "url": "https://slack.com/api/conversations.replies",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "channel",
+              "value": "={{ $json.channel }}"
+            },
+            {
+              "name": "ts",
+              "value": "={{ $json.thread_ts }}"
+            },
+            {
+              "name": "inclusive",
+              "value": "true"
+            },
+            {
+              "name": "limit",
+              "value": "1"
+            },
+            {
+              "name": "include_all_metadata",
+              "value": "true"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SLACK_BOT_TOKEN }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -448,
+        0
+      ],
+      "id": "c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f",
+      "name": "Fetch escalation thread parent",
+      "notes": "Looks up the ORIGINAL escalation alert message so we can read its structured metadata (conversation_id) instead of asking a human to type a UUID."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Resolve which conversation this Slack thread reply belongs to.\n//\n// Preferred: the escalation alert (parent message) was posted by the\n// backend with structured Slack message metadata containing conversation_id\n// -- no human ever has to type anything but a normal reply.\n//\n// Fallback: if metadata is missing for any reason (older message, API\n// hiccup), extract the UUID that's still visibly printed in the alert's\n// text/blocks for humans to read.\n//\n// If neither resolves a conversation_id, we stop here rather than calling\n// the API with a guess -- this is the \"malformed/unresolvable reply\"\n// safety net.\nconst response = $input.first().json;\nconst parent = (response.messages || [])[0];\n\nlet conversationId = null;\n\nif (parent && parent.metadata && parent.metadata.event_payload) {\n  conversationId = parent.metadata.event_payload.conversation_id || null;\n}\n\nif (!conversationId && parent) {\n  const haystack = (parent.text || '') + JSON.stringify(parent.blocks || '');\n  const match = haystack.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);\n  if (match) conversationId = match[0];\n}\n\nif (!conversationId) {\n  return [];\n}\n\nconst reply = $('Slack Trigger').item.json;\nconst text = (reply.text || '').trim();\nif (!text) {\n  return [];\n}\n\nconst agentName = (reply.user_profile && (reply.user_profile.display_name || reply.user_profile.real_name)) || 'Support Agent';\n\nreturn [{\n  json: {\n    conversation_id: conversationId,\n    message: text,\n    agent_name: agentName,\n    event_id: reply.ts,\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -96,7 +146,7 @@
         0
       ],
       "id": "7f3b8c74-2d2c-4e77-9c77-3dad0f2b8c03",
-      "name": "Extract conversation_id and message"
+      "name": "Resolve conversation_id"
     },
     {
       "parameters": {
@@ -165,6 +215,10 @@
             {
               "name": "agent_name",
               "value": "={{ $json.agent_name }}"
+            },
+            {
+              "name": "event_id",
+              "value": "={{ $json.event_id }}"
             }
           ]
         },
@@ -186,25 +240,36 @@
       "main": [
         [
           {
-            "node": "Is real user reply",
+            "node": "Is real user thread reply",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Is real user reply": {
+    "Is real user thread reply": {
       "main": [
         [
           {
-            "node": "Extract conversation_id and message",
+            "node": "Fetch escalation thread parent",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Extract conversation_id and message": {
+    "Fetch escalation thread parent": {
+      "main": [
+        [
+          {
+            "node": "Resolve conversation_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve conversation_id": {
       "main": [
         [
           {
@@ -238,5 +303,6 @@
   "settings": {
     "executionOrder": "v1"
   },
+  "id": "workflow-b-slack-hitl",
   "tags": []
 }

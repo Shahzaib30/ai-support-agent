@@ -14,8 +14,12 @@ class ChatRequest(BaseModel):
     message: str
     customer_name: str | None = None
     # "telegram" is the historical default: this endpoint was originally built
-    # for the n8n Telegram workflow, which still doesn't send this field.
+    # for the n8n Telegram workflow, which still doesn't always send this field.
     channel: str = "telegram"
+    # Upstream event id (e.g. Telegram's update_id) for webhook-retry
+    # idempotency. Optional — channels that don't have at-least-once
+    # redelivery semantics (web, discord) can omit it.
+    event_id: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -28,9 +32,9 @@ class ChatResponse(BaseModel):
 
 
 NORMALIZERS = {
-    "web": web_normalizer.to_inbound_message,
-    "telegram": telegram_normalizer.to_inbound_message,
-    "discord": discord_normalizer.to_inbound_message,
+    "web": web_normalizer.to_incoming_message,
+    "telegram": telegram_normalizer.to_incoming_message,
+    "discord": discord_normalizer.to_incoming_message,
 }
 
 
@@ -38,11 +42,12 @@ NORMALIZERS = {
 async def chat(request: ChatRequest):
     """
     Channel-agnostic chat ingress. Used directly by the web frontend, and as
-    the relay target for the n8n Telegram workflow and the Discord bot — each
-    of which normalizes its own platform payload into this same shape before
-    calling here, and is normalized again into an InboundMessage below.
+    the relay target for the n8n Telegram workflow (Workflow A) and the
+    Discord bot — each of which normalizes its own platform payload into this
+    same shape before calling here, and is normalized again into an
+    IncomingMessage below.
     """
-    normalize = NORMALIZERS.get(request.channel, telegram_normalizer.to_inbound_message)
+    normalize = NORMALIZERS.get(request.channel, telegram_normalizer.to_incoming_message)
     inbound = normalize(request)
     reply = await process_message(inbound)
 

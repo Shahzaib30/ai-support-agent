@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
 
   # ─────────────────────────────────────────
@@ -33,9 +31,9 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB:       ai_support_agent
-      POSTGRES_USER:     postgres
-      POSTGRES_PASSWORD: shahzaib123
+      POSTGRES_DB:       ${POSTGRES_DB:-ai_support_agent}
+      POSTGRES_USER:     ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
     volumes:
       - postgres_data:/var/lib/postgresql/data     # data persists
       - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql  # auto runs on first start
@@ -115,8 +113,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      GF_SECURITY_ADMIN_USER:     admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_USER:     ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change_me}
       GF_USERS_ALLOW_SIGN_UP:     "false"
     volumes:
       - grafana_data:/var/lib/grafana
@@ -138,8 +136,8 @@ services:
       - "5678:5678"
     environment:
       - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=admin
-      - N8N_BASIC_AUTH_PASSWORD=admin
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:-change_me}
       - WEBHOOK_URL=http://localhost:5678
     volumes:
       - n8n_data:/home/node/.n8n

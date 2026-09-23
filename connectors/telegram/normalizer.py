@@ -1,17 +1,20 @@
-from connectors.base import InboundMessage
+from connectors.base import IncomingMessage
 
 
-def to_inbound_message(request) -> InboundMessage:
+def to_incoming_message(request) -> IncomingMessage:
     """
-    Normalizes a Telegram-originated ChatRequest into an InboundMessage.
+    Normalizes a Telegram-originated ChatRequest into an IncomingMessage.
 
-    Telegram messages reach this API via the n8n Telegram workflow, which
-    relays each update as a ChatRequest (telegram_chat_id/message/customer_name)
+    Telegram messages reach this API via the n8n Telegram workflow (Workflow
+    A), which relays each update as a ChatRequest (telegram_chat_id/message/
+    customer_name, plus Telegram's own update_id as event_id for idempotency)
     rather than the API terminating a Telegram webhook directly.
     """
-    return InboundMessage(
+    metadata = {"event_id": request.event_id} if request.event_id else {}
+    return IncomingMessage(
         channel="telegram",
-        external_id=request.telegram_chat_id,
-        text=request.message,
+        customer_id=request.telegram_chat_id,
+        message=request.message,
         customer_name=request.customer_name,
+        metadata=metadata,
     )

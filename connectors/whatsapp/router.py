@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
 from connectors.whatsapp.client import send_whatsapp_message
-from connectors.whatsapp.normalizer import to_inbound_message
+from connectors.whatsapp.normalizer import to_incoming_message
 from core.agent import process_message
 
 router = APIRouter()
@@ -34,14 +34,17 @@ async def whatsapp_webhook(request: Request):
     WhatsApp Cloud API."""
     body = await request.json()
     try:
-        inbound = to_inbound_message(body)
+        inbound = to_incoming_message(body)
         if inbound is None:
             return {"status": "ignored"}
 
-        logger.info(f"Received WhatsApp from {inbound.external_id}: {inbound.text[:50]}...")
+        logger.info(f"Received WhatsApp from {inbound.customer_id}: {inbound.message[:50]}...")
 
         reply = await process_message(inbound)
-        await send_whatsapp_message(inbound.external_id, reply.answer)
+        if reply.answer:
+            # Empty answer means process_message short-circuited on a
+            # duplicate/retried webhook delivery — nothing to send.
+            await send_whatsapp_message(inbound.customer_id, reply.answer)
         return {"status": "ok"}
 
     except Exception as e:

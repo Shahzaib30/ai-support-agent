@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Message, ChatResponse } from "../types";
 
-const API_URL = "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>([

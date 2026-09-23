@@ -7,16 +7,12 @@ langchain
 langchain-core
 langchain-community
 langchain-text-splitters
-langgraph
 langsmith
 openai
 faiss-cpu
 rank-bm25
 flashrank
-tavily-python
 asyncpg
-sqlalchemy
-alembic
 psycopg2-binary
 redis
 pypdf
