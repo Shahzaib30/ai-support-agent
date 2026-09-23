@@ -5,9 +5,9 @@
 A production-oriented customer support backend: a single channel-agnostic core agent serves WhatsApp, Discord, a web widget, and Telegram (via n8n); answers are grounded in a hybrid (dense + keyword) retrieval pipeline over your own documents; conversations that the AI can't confidently handle — or that a customer is visibly frustrated with — are handed off to a human through a structured Slack thread, and handed back automatically once resolved.
 
 <p align="center">
-  <img src="assets/slack_hitl_workflow.png" alt="Slack HITL Workflow" width="40%">
-  <img src="assets/ui.png" alt="Customer support web widget" width="30%">
-  <img src="assets/Workflow_image.png" alt="n8n Workflow image" width="30%">
+  <img src="assets/slack_hitl_workflow.png" alt="Slack HITL Workflow" width="100%">
+  <img src="assets/ui.png" alt="Customer support web widget" width="100%">
+  <img src="assets/Workflow_image.png" alt="n8n Workflow image" width="100%">
   
 </p>
 *(`n8n/Workflow_image.png` is a screenshot of an earlier revision of Workflow A and predates the redesign in §8 — kept in the repo for history, not shown here to avoid implying it's current.)*
