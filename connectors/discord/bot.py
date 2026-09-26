@@ -82,7 +82,7 @@ async def poll_human_replies():
                     escalated_users.pop(user_id, None)
                     user = await client.fetch_user(int(user_id))
                     await user.send(
-                        "✅ Your case has been resolved. You can continue chatting."
+                        "Your case has been resolved. You can continue chatting."
                     )
 
             except Exception as e:

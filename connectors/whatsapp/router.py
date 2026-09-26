@@ -42,8 +42,6 @@ async def whatsapp_webhook(request: Request):
 
         reply = await process_message(inbound)
         if reply.answer:
-            # Empty answer means process_message short-circuited on a
-            # duplicate/retried webhook delivery — nothing to send.
             await send_whatsapp_message(inbound.customer_id, reply.answer)
         return {"status": "ok"}
 

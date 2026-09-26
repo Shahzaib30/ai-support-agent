@@ -18,8 +18,6 @@ class HumanReplyRequest(BaseModel):
     conversation_id: str
     message: str
     agent_name: str | None = None
-    # Slack message `ts` (or any other stable id from the source system) so a
-    # retried Slack Events delivery doesn't insert the same reply twice.
     event_id: str | None = None
 
 

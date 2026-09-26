@@ -16,6 +16,11 @@ export function useChat() {
  const [sessionId, setSessionId] = useState("");
 
 useEffect(() => {
+  // Deferred to a client-only effect (not a lazy useState initializer)
+  // deliberately: this value is rendered in the sidebar, and computing it
+  // during render would run on both the server and the client, producing
+  // two different random values and a hydration mismatch.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   setSessionId(Math.random().toString(36).slice(2));
 }, []);
 

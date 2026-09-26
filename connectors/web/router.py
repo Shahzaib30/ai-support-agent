@@ -13,12 +13,7 @@ class ChatRequest(BaseModel):
     telegram_chat_id: str
     message: str
     customer_name: str | None = None
-    # "telegram" is the historical default: this endpoint was originally built
-    # for the n8n Telegram workflow, which still doesn't always send this field.
     channel: str = "telegram"
-    # Upstream event id (e.g. Telegram's update_id) for webhook-retry
-    # idempotency. Optional — channels that don't have at-least-once
-    # redelivery semantics (web, discord) can omit it.
     event_id: str | None = None
 
 

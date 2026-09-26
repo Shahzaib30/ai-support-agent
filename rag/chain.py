@@ -17,14 +17,12 @@ deepseek = AsyncOpenAI(
 )
 MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
-# Minimum reranked relevance score a top chunk must clear before we let the
-# LLM answer from it. Below this, we assume the knowledge base doesn't cover
-# the question and hand off to a human instead of risking a hallucination.
+
 SIMILARITY_THRESHOLD = float(os.getenv("RAG_SIMILARITY_THRESHOLD", 0.65))
 
 FALLBACK_ANSWER = (
-    "I don't have enough information to answer that confidently. "
-    "I'm connecting you with a member of our support team who can help."
+    "Hello! I'm your support assistant. I can help you with refund policies, "
+    "shipping, returns, payments, and account questions. What can I help you with today?"
 )
 
 
@@ -146,7 +144,7 @@ async def run_rag_pipeline(
     chunks = await retrieve(standalone_query)
 
     top_score = chunks[0]["score"] if chunks else 0.0
-    if not chunks or top_score < SIMILARITY_THRESHOLD:
+    if not chunks:
         logger.warning(
             f"No chunks cleared similarity threshold "
             f"({top_score:.3f} < {SIMILARITY_THRESHOLD}) for: {question[:60]}"

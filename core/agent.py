@@ -116,15 +116,6 @@ async def process_message(msg: IncomingMessage) -> AgentReply:
     escalation = await evaluate_sentiment_escalation(msg, sentiment_history)
     escalated = escalation["should_escalate"]
 
-    if low_confidence and not escalated:
-        # RAG had nothing confident to say — hand off instead of guessing.
-        escalated = True
-        await mark_escalated(msg.conversation_id, "RAG confidence below similarity threshold")
-        await send_slack_alert(
-            msg,
-            reason="RAG confidence below similarity threshold — no relevant knowledge found",
-            sentiment=current_sentiment,
-        )
 
     await save_message(
         conversation_id=msg.conversation_id,
