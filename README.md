@@ -13,7 +13,13 @@
 
 ## Demo
 
-> 🎥 *Demo video coming soon*
+<p align="center">
+  <a href="https://youtu.be/OLsJ4h6FXnM">
+    <img src="https://img.youtube.com/vi/OLsJ4h6FXnM/maxresdefault.jpg" width="80%" alt="Demo Video" />
+  </a>
+  <br/>
+  <a href="https://youtu.be/OLsJ4h6FXnM">▶ Watch Demo on YouTube</a>
+</p>
 
 ---
 
