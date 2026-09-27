@@ -36,7 +36,7 @@ async def poll_human_replies():
 
                 # fetch messages
                 req = urllib.request.Request(
-                    f"{API_URL}/messages/{conversation_id}?limit=100",
+                    f"{API_URL}/messages/{conversation_id}?limit=500",
                     method="GET",
                 )
                 with urllib.request.urlopen(req, timeout=10) as r:
@@ -44,16 +44,18 @@ async def poll_human_replies():
 
                 # escalated_at is tz-aware, created_at is naive UTC: compare the
                 # first 19 chars (YYYY-MM-DDTHH:MM:SS) as strings
-                escalated_at_clean = escalation_data["escalated_at"][:19]
+                escalated_at_clean = escalation_data["escalated_at"][:19].replace("T", " ")
+                all_human = [m for m in data["messages"] if m["role"] == "human_agent"]
+                logger.debug(f"escalated_at_clean: {escalated_at_clean}")
+                logger.debug(f"total human_agent messages: {len(all_human)}")
+                for m in all_human[-3:]:
+                    logger.debug(f"  msg: {m['created_at'][:19].replace('T',' ')} > {escalated_at_clean} = {m['created_at'][:19].replace('T',' ') > escalated_at_clean}")
                 human_msgs = [
                     m for m in data["messages"]
                     if m["role"] == "human_agent"
-                    and m["created_at"][:19] > escalated_at_clean
+                    and m["created_at"][:19].replace("T", " ") > escalated_at_clean
                 ]
-                logger.debug(
-                    f"Found {len(human_msgs)} human messages for {user_id} "
-                    f"(conversation {conversation_id})"
-                )
+                logger.debug(f"Found {len(human_msgs)} human messages for {user_id}")
 
                 if user_id not in shown_messages:
                     shown_messages[user_id] = set()

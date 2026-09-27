@@ -63,12 +63,11 @@ async def hitl_gate(msg: IncomingMessage) -> GateOutcome:
 
 
 async def handle_explicit_request(msg: IncomingMessage) -> str | None:
-    """If the customer explicitly asked for a human, escalate and return the
-    handoff message. Returns None if no explicit request was made."""
     if not is_explicit_human_request(msg.message):
         return None
 
     logger.info(f"Explicit human request from: {msg.customer_id}")
+    ESCALATIONS_TOTAL.inc()
     await mark_escalated(msg.conversation_id, "Customer explicitly requested a human agent")
     await send_slack_alert(msg, reason="Customer explicitly requested a human agent")
     return EXPLICIT_HANDOFF_MESSAGE

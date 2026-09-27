@@ -75,3 +75,23 @@ async def conversation_by_chat_id(telegram_chat_id: str):
     if not result:
         return {"conversation_id": None, "status": None}
     return result
+
+@router.get("/conversation/by-slack-ts/{thread_ts}")
+async def get_conversation_by_slack_ts(thread_ts: str):
+    from database.pool import get_pool
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT c.id, c.status 
+               FROM conversations c
+               JOIN escalations e ON e.conversation_id = c.id
+               WHERE e.slack_message_ts = $1""",
+            thread_ts,
+        )
+    if not row:
+        return {"conversation_id": None, "status": None}
+    return {
+        "conversation_id": str(row["id"]),
+        "status": row["status"],
+    }
+
