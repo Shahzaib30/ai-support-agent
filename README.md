@@ -15,8 +15,6 @@
 
 > 🎥 *Demo video coming soon*
 
-![System Architecture](assets/ai_support_agent.png)
-
 ---
 
 ## What It Does
