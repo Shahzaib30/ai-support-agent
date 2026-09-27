@@ -32,7 +32,9 @@ A customer writes in on Discord, WhatsApp, or the web widget. The system:
 
 ## System Architecture
 
-![Architecture](assets/ai_support_agent.png)
+<p align="center">
+  <img src="assets/ai_support_agent.png" width="60%" alt="System Architecture" />
+</p>
 
 ---
 
